@@ -24,6 +24,10 @@ if("${KernelARMPlatform}" STREQUAL "exynos5422")
     set(linux_tag "4.14.87-153")
     set(linux_arch "arm")
     set(linux_cross_compile "arm-linux-gnueabi-")
+elseif("${KernelARMPlatform}" STREQUAL "stm32mp2")
+    set(cpp_flags "-DKERNELARMPLATFORM_STM32MP2")
+    set(linux_arch "arm64")
+    list(APPEND cpp_includes "${CAMKES_VM_DIR}/components/VM_Arm/plat_include/stm32mp2")
 elseif("${KernelARMPlatform}" STREQUAL "qemu-arm-virt")
     set(cpp_flags "-DKERNELARMPLATFORM_QEMU-ARM-VIRT")
     set(linux_repo "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git")
@@ -187,6 +191,31 @@ else()
     set(rootfs_file "${CAMKES_VM_IMAGES_DIR}/${KernelARMPlatform}/rootfs_crossvm.cpio.gz")
 endif()
 
+if("${KernelARMPlatform}" STREQUAL "stm32mp2")
+    set(dts_file "${CAMKES_VM_IMAGES_DIR}/${KernelARMPlatform}/stm32mp257f-ev1-vm.dts")
+    add_custom_command(
+        OUTPUT linux/linux-dtb
+        COMMAND
+            dtc -q -I dts -O dtb -o linux/linux-dtb ${dts_file}
+        VERBATIM
+        DEPENDS ${dts_file}
+	)
+    # Create custom target for setting the dtb
+    add_custom_target(set_dtb DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/linux/linux-dtb")
+
+    # Updated dtb based on initrd
+    UpdateDtbFromInitrd(
+      "${CMAKE_CURRENT_BINARY_DIR}/linux/linux-dtb"
+        ${rootfs_file}
+	"0xb4400000"
+        dtb_gen_target # dependence rule only
+        output_dtb_location
+    )
+
+    # will add "${output_dtb_location}/linux-dtb" in file server "fserv"
+    AddToFileServer("linux-dtb" "${output_dtb_location}" DEPENDS dtb_gen_target)
+    AddToFileServer("linux-initrd" ${rootfs_file})
+else()
 # Add script to test dataport module
 AddFileToOverlayDir(
     "S91crossvm_test"
@@ -205,7 +234,9 @@ AddOverlayDirToRootfs(
     rootfs_target
     GZIP
 )
+
 AddToFileServer("linux-initrd" ${output_overlayed_rootfs_location} DEPENDS rootfs_target)
+endif()
 
 AddCamkesCPPFlag(
     cpp_flags
@@ -235,4 +266,5 @@ DeclareCAmkESRootserver(
     ${cpp_flags}
     CPP_INCLUDES
     ${CAMKES_VM_DIR}/components/VM_Arm
+    ${cpp_includes}
 )
